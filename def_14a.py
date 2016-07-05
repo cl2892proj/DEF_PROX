@@ -6,6 +6,7 @@ from zipfile import ZipFile
 import bs4
 import json
 import numpy as np
+import pandas as pd
 
 # reference: https://github.com/lukerosiak/pysec/blob/master/pysec/management/commands/sec_import_index.py
 
@@ -63,15 +64,43 @@ def download_index(year, qtr):
 
     return result
 
+def combine_similar_cells(arr, x):
+    # combine 2 adjacent columns of white spaces into one column of white space
+    # eg [x][x][x] --> [x][x]
+    n = len(arr)
+    i = 0
+    result = []
+    while i < n:
+        result.append(arr[i])
+        if arr[i] != x:
+            i+=1
+            continue
+        else:
+            if i + 1 == n: break
+            if arr[i+1] != x:
+                i+=1
+                continue
+            else:
+                i+=2
+                continue
+    return result
+
+
 def download_proxy(index): 
     proxy = index[0]
-    url = BASE_URL + proxy['filename']
-    raw = urllib.urlopen(url).read()
+    fn = '{0}/cik_{1}_date_{2}_orig.html'.format(DATA_DIR, proxy['cik'], proxy['date'])
+    if not os.path.exists(fn):
+        url = BASE_URL + proxy['filename']
+        raw = urllib.urlopen(url).read()
+        fileout=file(fn, 'w')
+        fileout.write(raw)
+        fileout.close()
+    else:
+        raw = file(fn, 'r').read()
+
     soup = bs4.BeautifulSoup(raw, 'html5lib')
-
     result = [] 
-
-    fn = '{0}/cik_{1}_date_{2}.html'.format(DATA_DIR, proxy['cik'], proxy['date'])
+    fn = '{0}/cik_{1}_date_{2}_extract.html'.format(DATA_DIR, proxy['cik'], proxy['date'])
     fileout=file(fn, 'w')
     for table in soup.find_all('table'):
         #if the first row has more than x columns, then the table might be the right table to look at
@@ -85,7 +114,12 @@ def download_proxy(index):
                     s = ' '.join(s.split())
                     s = s.strip()
                     row.append(s)
-                tbl.append(row)
+                    
+                    if len(td.find_all('p'))>0:
+                        row.append('')
+                tbl.append(combine_similar_cells(row,''))
+
+                pdb.set_trace()
 
             #verify every list has same number of elements, aka. same number of columns
             col_per_row = map(lambda x: len(x), tbl)
@@ -111,8 +145,11 @@ def rebuild_table(orig_tbl):
         # if every cell in a row is '', then remove the row from the array
         for axis in range(2):
             idx = np.apply_along_axis(lambda a: reduce(lambda x, y: x and y, a) , axis, (arr == ''))
-            if axis == 0: arr = arr[:, ~idx]
-            if axis == 1: arr = arr[~idx, :]
+            pdb.set_trace()
+            if axis == 0: 
+                arr = arr[:, ~idx]
+            if axis == 1: 
+                arr = arr[~idx, :]
 
         # replace '-' with 0
         arr[arr == '-'] = 0 
@@ -124,10 +161,28 @@ def rebuild_table(orig_tbl):
         h_arr = np.transpose(arr[:n, :])
         header = map(lambda x: x.strip(), [' '.join(row) for row in h_arr])
         d_arr = arr[n:, :]
+        df = pd.DataFrame(
+                    data = d_arr, #values
+                    columns = header
+                )
 
-        pdb.set_trace()
+
 
         print 'ok'
+
+#def insert_dynamodb(item):
+#    #http://neuralfoundry.com/scrapy-and-dynamodb-on-aws/
+#    dynamodb = boto3.resource('dynamodb', region_name='us-west-1')
+#    table = dynamodb.Table('')
+#    table.put_item(
+#        Item = {
+#            '':str(),
+#            '':str(),
+#            '':str(),
+#        }
+#            
+#    )
+#    return item
 
     
 
